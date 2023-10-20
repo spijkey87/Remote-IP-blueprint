@@ -1,0 +1,84 @@
+blueprint:
+  name: Container Afsluiten bij IP-wijziging
+  description: Automatiseer het afsluiten van een container bij IP-wijziging.
+  domain: automation
+  input:
+    container_sensor:
+      name: Container IP-sensor
+      description: Selecteer de sensor voor het IP-adres van de container.
+      selector:
+        entity:
+          domain: sensor
+    target_device:
+      name: Doelapparaat voor meldingen
+      description: Selecteer het doelapparaat voor meldingen.
+      selector:
+        target:
+          entity:
+            domain: notify
+    ip_address:
+      name: Huidig IP-adres van de container
+      description: Het huidige IP-adres van de container.
+      selector:
+        text: {}
+    ssh_username:
+      name: SSH-gebruikersnaam
+      description: De SSH-gebruikersnaam voor toegang tot de container.
+      selector:
+        text: {}
+    ssh_password:
+      name: SSH-wachtwoord
+      description: Het SSH-wachtwoord voor toegang tot de container.
+      selector:
+        text: {}
+  source_url: URL_VAN_JOUW_BLUEPRINT
+
+mode: parallel
+
+variables:
+  container_sensor: !input container_sensor
+  target_device: !input target_device
+  ip_address: !input ip_address
+  ssh_username: !input ssh_username
+  ssh_password: !input ssh_password
+
+trigger:
+  platform: state
+  entity_id: !input container_sensor
+
+condition:
+  - condition: template
+    value_template: "{{ trigger.to_state.state != ip_address }}"
+
+action:
+  - service: notify.notify
+    target:
+      entity_id: !input target_device
+    data:
+      message: "Het IP-adres van de container is gewijzigd naar {{ trigger.to_state.state }}. Wilt u de container afsluiten?"
+
+  - wait_for_trigger:
+      - platform: event
+        event_type: custom_confirm
+    continue_on_timeout: false
+
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.event.data.user_input == 'ja' }}"
+        sequence:
+          - service: shell_command.container_afsluiten
+            data:
+              ip_address: !input ip_address
+              ssh_username: !input ssh_username
+              ssh_password: !input ssh_password
+      - default:
+        - service: notify.notify
+          target:
+            entity_id: !input target_device
+          data:
+            message: "Container wordt niet afgesloten."
+
+shell_command:
+  container_afsluiten: "sshpass -p '{{ ssh_password }}' ssh {{ ssh_username }}@{{ ip_address }} 'docker container stop container_naam'"
+
